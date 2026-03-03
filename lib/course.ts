@@ -16,6 +16,7 @@ export type CoursePhase = {
   quiz: PhaseQuizQuestion[];
 };
 
+
 export const PASS_SCORE = 11;
 
 function codingQuestionsForPhase(phaseTitle: string): PhaseQuizQuestion[] {
