@@ -5,7 +5,7 @@ A personal app for developers who do not want to fall behind.
 It does 3 things:
 - Sends only top high-signal recent tech/AI updates (summary + reference links).
 - Builds what you should learn next with practical tasks and questions.
-- Sends a daily reminder email asking if you completed today's task.
+- Sends scheduled digest emails (twice daily).
 
 It also includes:
 - A structured AI/LLM/RAG from-scratch workflow (phase-by-phase with deliverables).
@@ -50,10 +50,12 @@ Open `http://localhost:3000`.
 
 ## 4) Daily scheduling (Vercel)
 `vercel.json` includes:
-- Daily run at `03:00 UTC` via `/api/reminder`.
+- Two runs per day via `/api/reminder`: `03:00 UTC` and `15:00 UTC`.
 
 Set `CRON_SECRET` in Vercel env and it will be checked in `Authorization: Bearer <CRON_SECRET>` (or `x-cron-secret`).
 
 ## Notes
 - If no LLM key is set, the app still works with deterministic fallback tasks/questions.
 - RSS sources are in `lib/updates.ts`; you can add/remove feeds based on your interests.
+- Reminder email now contains digest updates only (summaries + source links).
+- Quiz progress is saved in browser local storage for the deployed site URL.

@@ -6,6 +6,10 @@ import { COURSE_PHASES } from "@/lib/course";
 import type { DigestPayload } from "@/lib/types";
 
 type TabKey = "digest" | "quiz";
+type ProgressByPhase = Record<number, number>;
+
+const PHASE_PROGRESS_KEY = "dev-edge-phase-progress-v2";
+const PHASE_SELECTION_KEY = "dev-edge-selected-phase-v2";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<TabKey>("digest");
@@ -17,6 +21,7 @@ export default function HomePage() {
   const [selectedPhase, setSelectedPhase] = useState(1);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [quizStatus, setQuizStatus] = useState<string>("");
+  const [progressByPhase, setProgressByPhase] = useState<ProgressByPhase>({});
 
   const loadDigest = async () => {
     setLoadingDigest(true);
@@ -40,6 +45,27 @@ export default function HomePage() {
     void loadDigest();
   }, []);
 
+  useEffect(() => {
+    const savedProgress = localStorage.getItem(PHASE_PROGRESS_KEY);
+    const savedPhase = localStorage.getItem(PHASE_SELECTION_KEY);
+
+    if (savedProgress) {
+      try {
+        const parsed = JSON.parse(savedProgress) as ProgressByPhase;
+        setProgressByPhase(parsed);
+      } catch {
+        setProgressByPhase({});
+      }
+    }
+
+    if (savedPhase) {
+      const parsed = Number(savedPhase);
+      if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= COURSE_PHASES.length) {
+        setSelectedPhase(parsed);
+      }
+    }
+  }, []);
+
   const sendReminder = async () => {
     setDigestStatus("Sending reminder email...");
     try {
@@ -60,9 +86,15 @@ export default function HomePage() {
     [selectedPhase]
   );
 
+  const completedPhases = useMemo(
+    () => Object.values(progressByPhase).filter((score) => score > 0).length,
+    [progressByPhase]
+  );
+
   useEffect(() => {
     setAnswers({});
     setQuizStatus("");
+    localStorage.setItem(PHASE_SELECTION_KEY, String(selectedPhase));
   }, [selectedPhase]);
 
   const score = phase.quiz.reduce(
@@ -76,6 +108,12 @@ export default function HomePage() {
       return;
     }
 
+    setProgressByPhase((prev) => {
+      const currentBest = prev[phase.id] ?? 0;
+      const next = { ...prev, [phase.id]: Math.max(currentBest, score) };
+      localStorage.setItem(PHASE_PROGRESS_KEY, JSON.stringify(next));
+      return next;
+    });
     setQuizStatus(`Score ${score}/${phase.quiz.length}`);
   };
 
@@ -149,8 +187,13 @@ export default function HomePage() {
         <>
           <section className="panel">
             <h2>Phase Navigator</h2>
+            <p className="status">
+              Progress saved on this deployed site URL in your browser. Completed phases: {completedPhases}/
+              {COURSE_PHASES.length}
+            </p>
             <div className="phase-grid">
               {COURSE_PHASES.map((p) => {
+                const best = progressByPhase[p.id];
                 return (
                   <button
                     key={p.id}
@@ -158,6 +201,7 @@ export default function HomePage() {
                     onClick={() => setSelectedPhase(p.id)}
                   >
                     Phase {p.id}
+                    {typeof best === "number" ? ` (Best: ${best}/15)` : ""}
                   </button>
                 );
               })}
