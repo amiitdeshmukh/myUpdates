@@ -180,6 +180,22 @@ button:disabled {
   border-color: #0b6e4f;
 }
 
+.auth-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.email-input {
+  border: 1px solid #dbcdb8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  min-width: 260px;
+}
+
 .phase-btn {
   background: #f5f1e8;
   color: #111;

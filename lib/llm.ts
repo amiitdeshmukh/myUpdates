@@ -28,11 +28,18 @@ function extractJson(text: string): string {
 
 async function generateWithOpenAI(prompt: string): Promise<string | null> {
   if (!openaiClient) return null;
-  const response = await openaiClient.responses.create({
+  const response = await openaiClient.chat.completions.create({
     model: openaiModel,
-    input: `${prompt}\n\nOutput must be strict JSON only. No markdown or extra text.`
+    messages: [
+      {
+        role: "user",
+        content: `${prompt}\n\nOutput must be strict JSON only. No markdown or extra text.`
+      }
+    ],
+    temperature: 0.2
   });
-  return response.output_text ?? null;
+  const text = response.choices?.[0]?.message?.content;
+  return typeof text === "string" ? text : null;
 }
 
 async function generateWithGemini(prompt: string): Promise<string | null> {

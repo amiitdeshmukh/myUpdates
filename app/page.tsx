@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { COURSE_PHASES } from "@/lib/course";
+import { getSupabaseBrowser } from "@/lib/supabase-browser";
 import type { DigestPayload } from "@/lib/types";
 
 type TabKey = "digest" | "quiz";
@@ -10,6 +11,11 @@ type ProgressByPhase = Record<number, number>;
 
 const PHASE_PROGRESS_KEY = "dev-edge-phase-progress-v2";
 const PHASE_SELECTION_KEY = "dev-edge-selected-phase-v2";
+
+type ProgressRow = {
+  phase_id: number;
+  best_score: number;
+};
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<TabKey>("digest");
@@ -22,6 +28,91 @@ export default function HomePage() {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [quizStatus, setQuizStatus] = useState<string>("");
   const [progressByPhase, setProgressByPhase] = useState<ProgressByPhase>({});
+  const [authEmail, setAuthEmail] = useState("");
+  const [authStatus, setAuthStatus] = useState("");
+  const [syncStatus, setSyncStatus] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  const supabaseConfigured = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+
+  const readLocalProgress = (): ProgressByPhase => {
+    const raw = localStorage.getItem(PHASE_PROGRESS_KEY);
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw) as ProgressByPhase;
+    } catch {
+      return {};
+    }
+  };
+
+  const writeLocalProgress = (progress: ProgressByPhase) => {
+    localStorage.setItem(PHASE_PROGRESS_KEY, JSON.stringify(progress));
+    setProgressByPhase(progress);
+  };
+
+  const loadCloudProgress = async (uid: string) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .from("phase_progress")
+      .select("phase_id,best_score")
+      .eq("user_id", uid);
+
+    if (error) {
+      setSyncStatus(`Cloud load failed: ${error.message}`);
+      return;
+    }
+
+    const mapped: ProgressByPhase = {};
+    (data as ProgressRow[]).forEach((row) => {
+      mapped[row.phase_id] = row.best_score;
+    });
+    writeLocalProgress(mapped);
+    setSyncStatus("Cloud progress synced.");
+  };
+
+  const mergeLocalProgressToCloud = async (uid: string) => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    const local = readLocalProgress();
+    if (Object.keys(local).length === 0) return;
+
+    const { data: existing, error: existingErr } = await supabase
+      .from("phase_progress")
+      .select("phase_id,best_score")
+      .eq("user_id", uid);
+    if (existingErr) {
+      setSyncStatus(`Cloud merge failed: ${existingErr.message}`);
+      return;
+    }
+
+    const existingByPhase = new Map<number, number>();
+    (existing as ProgressRow[]).forEach((row) => existingByPhase.set(row.phase_id, row.best_score));
+
+    const rows = Object.entries(local).map(([phaseId, localBest]) => {
+      const pid = Number(phaseId);
+      const cloudBest = existingByPhase.get(pid) ?? 0;
+      const best = Math.max(cloudBest, localBest);
+      return {
+        user_id: uid,
+        phase_id: pid,
+        best_score: best,
+        last_score: localBest,
+        updated_at: new Date().toISOString()
+      };
+    });
+
+    const { error } = await supabase.from("phase_progress").upsert(rows, {
+      onConflict: "user_id,phase_id"
+    });
+    if (error) {
+      setSyncStatus(`Cloud merge failed: ${error.message}`);
+    }
+  };
 
   const loadDigest = async () => {
     setLoadingDigest(true);
@@ -46,17 +137,10 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    const savedProgress = localStorage.getItem(PHASE_PROGRESS_KEY);
+    const savedProgress = readLocalProgress();
     const savedPhase = localStorage.getItem(PHASE_SELECTION_KEY);
 
-    if (savedProgress) {
-      try {
-        const parsed = JSON.parse(savedProgress) as ProgressByPhase;
-        setProgressByPhase(parsed);
-      } catch {
-        setProgressByPhase({});
-      }
-    }
+    setProgressByPhase(savedProgress);
 
     if (savedPhase) {
       const parsed = Number(savedPhase);
@@ -64,6 +148,44 @@ export default function HomePage() {
         setSelectedPhase(parsed);
       }
     }
+    if (!supabaseConfigured) {
+      setSyncStatus("Cloud sync not configured. Progress stays on this browser only.");
+    }
+  }, []);
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+
+    const syncSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session;
+      if (!session) return;
+      setUserId(session.user.id);
+      setUserEmail(session.user.email ?? null);
+      await mergeLocalProgressToCloud(session.user.id);
+      await loadCloudProgress(session.user.id);
+    };
+
+    void syncSession();
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setUserId(null);
+        setUserEmail(null);
+        setSyncStatus("Signed out. Using local browser progress.");
+        return;
+      }
+      setUserId(session.user.id);
+      setUserEmail(session.user.email ?? null);
+      void mergeLocalProgressToCloud(session.user.id).then(() =>
+        loadCloudProgress(session.user.id)
+      );
+    });
+
+    return () => {
+      data.subscription.unsubscribe();
+    };
   }, []);
 
   const sendReminder = async () => {
@@ -108,13 +230,57 @@ export default function HomePage() {
       return;
     }
 
-    setProgressByPhase((prev) => {
-      const currentBest = prev[phase.id] ?? 0;
-      const next = { ...prev, [phase.id]: Math.max(currentBest, score) };
-      localStorage.setItem(PHASE_PROGRESS_KEY, JSON.stringify(next));
-      return next;
-    });
+    const currentBest = progressByPhase[phase.id] ?? 0;
+    const next = { ...progressByPhase, [phase.id]: Math.max(currentBest, score) };
+    writeLocalProgress(next);
+
+    if (userId) {
+      const supabase = getSupabaseBrowser();
+      if (supabase) {
+        void supabase.from("phase_progress").upsert(
+          {
+            user_id: userId,
+            phase_id: phase.id,
+            best_score: next[phase.id],
+            last_score: score,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: "user_id,phase_id" }
+        );
+      }
+    }
     setQuizStatus(`Score ${score}/${phase.quiz.length}`);
+  };
+
+  const sendMagicLink = async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setAuthStatus("Supabase env is missing.");
+      return;
+    }
+    if (!authEmail.trim()) {
+      setAuthStatus("Enter your email first.");
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: authEmail.trim(),
+      options: {
+        emailRedirectTo: window.location.origin
+      }
+    });
+    if (error) {
+      setAuthStatus(`Login link failed: ${error.message}`);
+      return;
+    }
+    setAuthStatus("Magic link sent. Open your email and click the sign-in link.");
+  };
+
+  const signOut = async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setAuthStatus("Signed out.");
   };
 
   return (
@@ -188,9 +354,32 @@ export default function HomePage() {
           <section className="panel">
             <h2>Phase Navigator</h2>
             <p className="status">
-              Progress saved on this deployed site URL in your browser. Completed phases: {completedPhases}/
-              {COURSE_PHASES.length}
+              {syncStatus} Completed phases: {completedPhases}/{COURSE_PHASES.length}
             </p>
+            <div className="auth-row">
+              {!supabaseConfigured && <p>Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.</p>}
+              {supabaseConfigured && !userId && (
+                <>
+                  <input
+                    className="email-input"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                  />
+                  <button onClick={() => void sendMagicLink()}>Send Login Link</button>
+                </>
+              )}
+              {supabaseConfigured && userId && (
+                <>
+                  <p>Signed in: {userEmail ?? "unknown"}</p>
+                  <button className="secondary" onClick={() => void signOut()}>
+                    Sign Out
+                  </button>
+                </>
+              )}
+            </div>
+            <p className="status">{authStatus}</p>
             <div className="phase-grid">
               {COURSE_PHASES.map((p) => {
                 const best = progressByPhase[p.id];
