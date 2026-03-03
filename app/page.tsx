@@ -2,10 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { COURSE_PHASES, PASS_SCORE } from "@/lib/course";
+import { COURSE_PHASES } from "@/lib/course";
 import type { DigestPayload } from "@/lib/types";
-
-const STORAGE_KEY = "dev-edge-phase-progress-v1";
 
 type TabKey = "digest" | "quiz";
 
@@ -16,7 +14,6 @@ export default function HomePage() {
   const [loadingDigest, setLoadingDigest] = useState(true);
   const [digestStatus, setDigestStatus] = useState("");
 
-  const [unlockedPhase, setUnlockedPhase] = useState(1);
   const [selectedPhase, setSelectedPhase] = useState(1);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [quizStatus, setQuizStatus] = useState<string>("");
@@ -58,16 +55,6 @@ export default function HomePage() {
     }
   };
 
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-    const parsed = Number(saved);
-    if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= COURSE_PHASES.length) {
-      setUnlockedPhase(parsed);
-      setSelectedPhase(parsed);
-    }
-  }, []);
-
   const phase = useMemo(
     () => COURSE_PHASES.find((p) => p.id === selectedPhase) ?? COURSE_PHASES[0],
     [selectedPhase]
@@ -78,42 +65,25 @@ export default function HomePage() {
     setQuizStatus("");
   }, [selectedPhase]);
 
-  const isLocked = phase.id > unlockedPhase;
   const score = phase.quiz.reduce(
     (sum, q, idx) => (answers[idx] === q.answerIndex ? sum + 1 : sum),
     0
   );
 
-  const submitPhaseQuiz = () => {
+  const checkQuiz = () => {
     if (Object.keys(answers).length < phase.quiz.length) {
       setQuizStatus("Answer all quiz questions first.");
       return;
     }
 
-    if (score >= PASS_SCORE) {
-      const nextUnlocked = Math.max(unlockedPhase, Math.min(phase.id + 1, COURSE_PHASES.length));
-      setUnlockedPhase(nextUnlocked);
-      localStorage.setItem(STORAGE_KEY, String(nextUnlocked));
-      setQuizStatus(`Passed (${score}/${phase.quiz.length}). Next phase unlocked.`);
-      return;
-    }
-
-    setQuizStatus(`Score ${score}/${phase.quiz.length}. Need at least ${PASS_SCORE} to unlock next phase.`);
-  };
-
-  const resetProgress = () => {
-    setUnlockedPhase(1);
-    setSelectedPhase(1);
-    setAnswers({});
-    setQuizStatus("Progress reset. Only Phase 1 is unlocked.");
-    localStorage.setItem(STORAGE_KEY, "1");
+    setQuizStatus(`Score ${score}/${phase.quiz.length}`);
   };
 
   return (
     <main className="container">
       <h1 className="title">Dev Edge Coach</h1>
       <p className="subtitle">
-        Tab 1 for daily digest + new skills. Tab 2 for AI quiz + phase-based progress.
+        Tab 1 for daily digest + new skills. Tab 2 for AI quiz by phase.
       </p>
 
       <section className="panel">
@@ -128,7 +98,7 @@ export default function HomePage() {
             className={`tab-btn ${activeTab === "quiz" ? "tab-btn-active" : ""}`}
             onClick={() => setActiveTab("quiz")}
           >
-            2. AI Quiz + Progress
+            2. AI Quiz
           </button>
         </div>
       </section>
@@ -181,16 +151,13 @@ export default function HomePage() {
             <h2>Phase Navigator</h2>
             <div className="phase-grid">
               {COURSE_PHASES.map((p) => {
-                const locked = p.id > unlockedPhase;
-                const completed = p.id < unlockedPhase;
                 return (
                   <button
                     key={p.id}
                     className={`phase-btn ${selectedPhase === p.id ? "phase-btn-active" : ""}`}
-                    onClick={() => !locked && setSelectedPhase(p.id)}
-                    disabled={locked}
+                    onClick={() => setSelectedPhase(p.id)}
                   >
-                    Phase {p.id}: {locked ? "Locked" : completed ? "Completed" : "Current"}
+                    Phase {p.id}
                   </button>
                 );
               })}
@@ -201,69 +168,63 @@ export default function HomePage() {
             <h2>
               Phase {phase.id}: {phase.title}
             </h2>
-            {isLocked && <p>This phase is locked. Clear previous phase quiz first.</p>}
-            {!isLocked && (
-              <>
-                <p>
-                  <strong>Duration:</strong> {phase.duration}
-                </p>
-                <p>
-                  <strong>Why this phase:</strong> {phase.whyItMatters}
-                </p>
+            <>
+              <p>
+                <strong>Duration:</strong> {phase.duration}
+              </p>
+              <p>
+                <strong>Why this phase:</strong> {phase.whyItMatters}
+              </p>
 
-                <h3>Expected Outcomes</h3>
-                <ol>{phase.outcomes.map((o) => <li key={o}>{o}</li>)}</ol>
+              <h3>Expected Outcomes</h3>
+              <ol>{phase.outcomes.map((o) => <li key={o}>{o}</li>)}</ol>
 
-                <h3>Tasks (Do these this week)</h3>
-                <ol>{phase.tasks.map((t) => <li key={t}>{t}</li>)}</ol>
+              <h3>Tasks (Do these this week)</h3>
+              <ol>{phase.tasks.map((t) => <li key={t}>{t}</li>)}</ol>
 
-                <h3>Exact Prompts for Online AI Tutors</h3>
-                <p>Copy these exactly and use in ChatGPT/Gemini/Claude with your own follow-up questions.</p>
-                {phase.prompts.map((prompt, idx) => (
-                  <article key={prompt} className="prompt-card">
-                    <p>
-                      <strong>Prompt {idx + 1}</strong>
+              <h3>Exact Prompts for Online AI Tutors</h3>
+              <p>Copy these exactly and use in ChatGPT/Gemini/Claude with your own follow-up questions.</p>
+              {phase.prompts.map((prompt, idx) => (
+                <article key={prompt} className="prompt-card">
+                  <p>
+                    <strong>Prompt {idx + 1}</strong>
+                  </p>
+                  <pre>{prompt}</pre>
+                </article>
+              ))}
+
+              <h3>Phase Quiz ({phase.quiz.length} questions)</h3>
+              {phase.quiz.map((q, idx) => (
+                <article key={q.question} className="quiz-card">
+                  <p>
+                    <strong>
+                      Q{idx + 1}. {q.question}
+                    </strong>
+                  </p>
+                  <div className="options">
+                    {q.options.map((opt, optIdx) => (
+                      <button
+                        key={`${q.question}-${optIdx}`}
+                        className={`option-btn ${answers[idx] === optIdx ? "selected" : ""}`}
+                        onClick={() => setAnswers((prev) => ({ ...prev, [idx]: optIdx }))}
+                      >
+                        {String.fromCharCode(65 + optIdx)}. {opt}
+                      </button>
+                    ))}
+                  </div>
+                  {quizStatus.startsWith("Score") ? (
+                    <p className="result">
+                      Correct answer: {String.fromCharCode(65 + q.answerIndex)}. {q.explanation}
                     </p>
-                    <pre>{prompt}</pre>
-                  </article>
-                ))}
+                  ) : null}
+                </article>
+              ))}
 
-                <h3>Phase Quiz (Pass score: {PASS_SCORE}/{phase.quiz.length})</h3>
-                {phase.quiz.map((q, idx) => (
-                  <article key={q.question} className="quiz-card">
-                    <p>
-                      <strong>
-                        Q{idx + 1}. {q.question}
-                      </strong>
-                    </p>
-                    <div className="options">
-                      {q.options.map((opt, optIdx) => (
-                        <button
-                          key={`${q.question}-${optIdx}`}
-                          className={`option-btn ${answers[idx] === optIdx ? "selected" : ""}`}
-                          onClick={() => setAnswers((prev) => ({ ...prev, [idx]: optIdx }))}
-                        >
-                          {String.fromCharCode(65 + optIdx)}. {opt}
-                        </button>
-                      ))}
-                    </div>
-                    {quizStatus.startsWith("Passed") || quizStatus.startsWith("Score") ? (
-                      <p className="result">
-                        Correct answer: {String.fromCharCode(65 + q.answerIndex)}. {q.explanation}
-                      </p>
-                    ) : null}
-                  </article>
-                ))}
-
-                <div className="cta">
-                  <button onClick={submitPhaseQuiz}>Submit Phase Quiz</button>
-                  <button className="secondary" onClick={resetProgress}>
-                    Reset Progress
-                  </button>
-                </div>
-                <p className="status">{quizStatus}</p>
-              </>
-            )}
+              <div className="cta">
+                <button onClick={checkQuiz}>Check Answers</button>
+              </div>
+              <p className="status">{quizStatus}</p>
+            </>
           </section>
         </>
       )}

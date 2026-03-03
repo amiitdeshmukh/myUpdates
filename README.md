@@ -9,7 +9,7 @@ It does 3 things:
 
 It also includes:
 - A structured AI/LLM/RAG from-scratch workflow (phase-by-phase with deliverables).
-- An in-app phase quiz (MCQ) with hard locking. Next phase unlocks only after passing current phase.
+- An in-app phase quiz (MCQ) with 15 questions including coding-focused questions.
 - Exact prompts per phase that you can copy into online AI tutors.
 
 ## Stack

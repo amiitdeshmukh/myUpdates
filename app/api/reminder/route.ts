@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 function authorized(req: NextRequest): boolean {
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) return true;
+  if (req.method === "POST") return true;
   const header = req.headers.get("x-cron-secret");
   const auth = req.headers.get("authorization");
   return header === cronSecret || auth === `Bearer ${cronSecret}`;
