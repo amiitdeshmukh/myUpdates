@@ -29,6 +29,7 @@ export default function HomePage() {
   const [quizStatus, setQuizStatus] = useState<string>("");
   const [progressByPhase, setProgressByPhase] = useState<ProgressByPhase>({});
   const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const [authStatus, setAuthStatus] = useState("");
   const [syncStatus, setSyncStatus] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
@@ -252,28 +253,53 @@ export default function HomePage() {
     setQuizStatus(`Score ${score}/${phase.quiz.length}`);
   };
 
-  const sendMagicLink = async () => {
+  const signInWithPassword = async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
       setAuthStatus("Supabase env is missing.");
       return;
     }
-    if (!authEmail.trim()) {
-      setAuthStatus("Enter your email first.");
+    if (!authEmail.trim() || !authPassword) {
+      setAuthStatus("Enter both email and password.");
       return;
     }
 
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: authEmail.trim(),
-      options: {
-        emailRedirectTo: window.location.origin
-      }
+      password: authPassword
     });
     if (error) {
-      setAuthStatus(`Login link failed: ${error.message}`);
+      setAuthStatus(`Sign in failed: ${error.message}`);
       return;
     }
-    setAuthStatus("Magic link sent. Open your email and click the sign-in link.");
+    setAuthStatus("Signed in successfully.");
+  };
+
+  const signUpWithPassword = async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) {
+      setAuthStatus("Supabase env is missing.");
+      return;
+    }
+    if (!authEmail.trim() || !authPassword) {
+      setAuthStatus("Enter both email and password.");
+      return;
+    }
+
+    const { data, error } = await supabase.auth.signUp({
+      email: authEmail.trim(),
+      password: authPassword
+    });
+    if (error) {
+      setAuthStatus(`Sign up failed: ${error.message}`);
+      return;
+    }
+
+    if (data.session) {
+      setAuthStatus("Account created and signed in.");
+      return;
+    }
+    setAuthStatus("Account created. Check your email if confirmation is enabled.");
   };
 
   const signOut = async () => {
@@ -367,7 +393,17 @@ export default function HomePage() {
                     value={authEmail}
                     onChange={(e) => setAuthEmail(e.target.value)}
                   />
-                  <button onClick={() => void sendMagicLink()}>Send Login Link</button>
+                  <input
+                    className="email-input"
+                    type="password"
+                    placeholder="password"
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                  />
+                  <button onClick={() => void signInWithPassword()}>Sign In</button>
+                  <button className="secondary" onClick={() => void signUpWithPassword()}>
+                    Sign Up
+                  </button>
                 </>
               )}
               {supabaseConfigured && userId && (

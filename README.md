@@ -60,7 +60,7 @@ Use Supabase free tier.
 
 1. Create a free Supabase project.
 2. In Supabase SQL Editor, run [schema.sql](/Users/amiitdeshmukh/VSCode/myUpdates/supabase/schema.sql).
-3. In Supabase Auth settings, enable Email login (magic link).
+3. In Supabase Auth settings, enable Email provider (for email + password sign-in).
 4. Add your deployed Vercel URL to Supabase Auth redirect URLs.
 5. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel env vars.
 6. Redeploy.
